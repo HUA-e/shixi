@@ -4,8 +4,6 @@
 import streamlit as st
 import traceback
 import pandas as pd
-from datetime import date
-from io import StringIO
 
 from web.components.styles import inject_styles
 from web.components.sidebar import render_sidebar

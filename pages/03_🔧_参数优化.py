@@ -4,11 +4,9 @@
 import streamlit as st
 import traceback
 from datetime import date
-from web.components.sidebar import POPULAR_STOCKS, _render_stock_selector
-
+from web.strategy_config import STRATEGY_CLASSES, STRATEGY_CONFIG, convert_params_for_backtest, POPULAR_STOCKS
 from web.components.styles import inject_styles
 from web.components.charts import plot_optimization_heatmap
-from web.strategy_config import STRATEGY_CLASSES, STRATEGY_CONFIG, convert_params_for_backtest
 from backtest.engine import run_backtest
 
 inject_styles()
@@ -30,7 +28,13 @@ OPT_PARAMS = {
 with st.sidebar:
     st.header("基础设置")
 
-    symbol = _render_stock_selector()
+    stock_options = POPULAR_STOCKS + ["__custom__ 手动输入代码..."]
+    sel = st.selectbox("股票", stock_options,
+                       format_func=lambda x: x if x != "__custom__ 手动输入代码..." else "✏️ 手动输入代码...")
+    if sel.startswith("__custom__"):
+        symbol = st.text_input("输入6位代码", value="000001", placeholder="如 000001", max_chars=6)
+    else:
+        symbol = sel.split()[0]
 
     col1, col2 = st.columns(2)
     with col1:

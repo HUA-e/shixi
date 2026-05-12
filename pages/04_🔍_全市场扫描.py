@@ -201,13 +201,16 @@ for i, (_, row) in enumerate(best_results.iterrows()):
     total_trades = trades.get("total", {}).get("total", 0)
     won = trades.get("won", {}).get("total", 0)
 
+    sr_val = row['夏普比率']
+    sr_str = f"{sr_val:.2f}" if pd.notna(sr_val) else "N/A"
+
     with st.expander(
-        f"#{i+1} {row['代码']} — {row['总收益率']:+.2%}  |  夏普 {row['夏普比率']:.2f}  |  回撤 {row['最大回撤']:.1f}%"
+        f"#{i+1} {row['代码']} — {row['总收益率']:+.2%}  |  夏普 {sr_str}  |  回撤 {row['最大回撤']:.1f}%"
     ):
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("总收益率", f"{row['总收益率']:+.2%}")
         c2.metric("最大回撤", f"{row['最大回撤']:.1f}%")
-        c3.metric("夏普比率", f"{row['夏普比率']:.2f}")
+        c3.metric("夏普比率", sr_str)
         c4.metric("交易次数", f"{total_trades} (胜率 {won/total_trades:.0%})" if total_trades > 0 else "0")
 
         from web.components.charts import plot_equity_curve, plot_drawdown
