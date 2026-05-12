@@ -10,6 +10,17 @@ def inject_styles():
     /* 隐藏底部 "Made with Streamlit" */
     footer { display: none !important; }
 
+    /* 全局禁止文字截断省略号 */
+    .stMarkdown, .stMarkdown p, .stMarkdown span,
+    div[data-testid="stMetric"] label,
+    div[data-testid="stMetric"] div[data-testid="stMetricValue"],
+    .stDataFrame td, .stDataFrame th,
+    .stSelectbox div, .stTextInput label, button {
+        overflow: visible !important;
+        white-space: normal !important;
+        text-overflow: clip !important;
+    }
+
     /* 指标卡片圆角+间距 */
     div[data-testid="stMetric"] {
         border-radius: 14px;

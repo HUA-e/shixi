@@ -76,17 +76,18 @@ won = trades.get("won", {}).get("total", 0)
 win_rate = won / total_trades * 100 if total_trades > 0 else 0
 
 # 4列指标卡片——够宽不会截断
-c1, c2, c3, c4 = st.columns(4)
+c1, c2 = st.columns(2)
+c3, c4 = st.columns(2)
+c5, c6 = st.columns(2)
+c7, c8 = st.columns(2)
 c1.metric("总收益率", f"{returns:+.2%}")
 c2.metric("买入持有基准", f"{bh_return:+.2%}")
 c3.metric("超额收益", f"{returns - bh_return:+.2%}")
 c4.metric("最大回撤", f"{max_dd:.1f}%（持续{dd_len}天）")
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("夏普比率", f"{sr:.2f}" if sr else "数据不足")
-c2.metric("交易次数", f"{total_trades} 次（胜率 {win_rate:.0f}%）")
-c3.metric("初始资金", f"{r['initial_value']:,.0f} 元")
-c4.metric("最终资金", f"{r['final_value']:,.0f} 元")
+c5.metric("夏普比率", f"{sr:.2f}" if sr else "数据不足")
+c6.metric("交易次数", f"{total_trades} 次（胜率 {win_rate:.0f}%）")
+c7.metric("初始资金", f"{r['initial_value']:,.0f} 元")
+c8.metric("最终资金", f"{r['final_value']:,.0f} 元")
 
 st.markdown("<br>", unsafe_allow_html=True)
 st.subheader("资金曲线")
