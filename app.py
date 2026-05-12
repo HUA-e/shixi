@@ -57,9 +57,19 @@ strategies = [
     },
 ]
 
-cols = st.columns(4)
-for i, s in enumerate(strategies):
-    with cols[i]:
+# 2行2列，防止卡片过窄
+row1 = st.columns(2)
+for i, s in enumerate(strategies[:2]):
+    with row1[i]:
+        with st.container(border=True):
+            st.markdown(f"### {s['icon']} {s['name']}")
+            st.caption(s['desc'])
+            tag_str = " ".join([t for t, _ in s["tags"]])
+            st.caption(f"🏷 {tag_str}  |  {s['suit']}  |  风险 {s['risk']}")
+
+row2 = st.columns(2)
+for i, s in enumerate(strategies[2:]):
+    with row2[i]:
         with st.container(border=True):
             st.markdown(f"### {s['icon']} {s['name']}")
             st.caption(s['desc'])
