@@ -257,7 +257,7 @@ best_dd = min(results.items(),
 
 st.info(f"""
 - **收益最高**: {STRATEGY_CONFIG[best[0]]['name']}（{best[1]['total_return']:.2%}）
-- **夏普最优**: {STRATEGY_CONFIG[best_sharpe[0]]['name']}（{best_sharpe[1]['sharpe'].get('sharperatio', 0):.2f}）
+- **夏普最优**: {STRATEGY_CONFIG[best_sharpe[0]]['name']}（{(best_sharpe[1]['sharpe'].get('sharperatio') or 0):.2f}）
 - **回撤最小**: {STRATEGY_CONFIG[best_dd[0]]['name']}
 - 注意：单次回测结果受参数和时间区间影响较大，建议多周期验证
 """)
