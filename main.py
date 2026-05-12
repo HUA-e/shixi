@@ -10,18 +10,10 @@ import matplotlib.pyplot as plt
 
 from config import INITIAL_CASH
 from backtest.engine import run_backtest
-from strategies.ma_cross import MACrossStrategy
-from strategies.momentum import MomentumStrategy
-from strategies.mean_reversion import MeanReversionStrategy
-from strategies.turtle import TurtleStrategy
-
-# 注册可用策略
-STRATEGIES = {
-    "ma_cross": MACrossStrategy,
-    "momentum": MomentumStrategy,
-    "mean_rev": MeanReversionStrategy,
-    "turtle": TurtleStrategy,
-}
+from web.strategy_config import (
+    STRATEGY_CLASSES, STRATEGY_CONFIG, get_strategy_default_kwargs,
+    convert_params_for_backtest,
+)
 
 
 def print_results(result):
@@ -59,19 +51,11 @@ def print_results(result):
     print(f"{'─' * 45}\n")
 
 
-def _build_strategy_kwargs(args):
-    """根据策略类型构建参数字典"""
-    stype = args.strategy
-    if stype == "ma_cross":
-        return {"fast": args.fast, "slow": args.slow}
-    elif stype == "momentum":
-        return {"lookback": args.lookback}
-    elif stype == "mean_rev":
-        return {"bb_period": getattr(args, "bb_period", 20)}
-    elif stype == "turtle":
-        return {"entry_period": getattr(args, "entry_period", 20),
-                "exit_period": getattr(args, "exit_period", 10)}
-    return {}
+def _build_strategy_kwargs(args, strategy_key):
+    """根据策略类型从命令行参数构建 kwargs"""
+    meta = STRATEGY_CONFIG[strategy_key]
+    kwargs = {k: getattr(args, k) for k in meta["params"] if hasattr(args, k)}
+    return convert_params_for_backtest(strategy_key, kwargs)
 
 
 def main():
@@ -91,11 +75,11 @@ def main():
     parser.add_argument("--end", type=str, default="20251231",
                         help="回测结束日期 YYYYMMDD")
     parser.add_argument("--strategy", type=str, default="ma_cross",
-                        choices=list(STRATEGIES.keys()), help="策略名称")
+                        choices=list(STRATEGY_CLASSES.keys()), help="策略名称")
     parser.add_argument("--cash", type=float, default=INITIAL_CASH,
                         help=f"初始资金（默认 {INITIAL_CASH:,}）")
 
-    # 策略参数（不同策略使用不同参数，忽略不适用的即可）
+    # 动态添加各策略的参数
     parser.add_argument("--fast", type=int, default=5, help="[ma_cross] 快线周期")
     parser.add_argument("--slow", type=int, default=20, help="[ma_cross] 慢线周期")
     parser.add_argument("--lookback", type=int, default=20, help="[momentum] 回顾周期")
@@ -106,9 +90,8 @@ def main():
                         help="不显示图表")
     args = parser.parse_args()
 
-    # 构建策略参数
-    strategy_cls = STRATEGIES[args.strategy]
-    strategy_kwargs = _build_strategy_kwargs(args)
+    strategy_cls = STRATEGY_CLASSES[args.strategy]
+    strategy_kwargs = _build_strategy_kwargs(args, args.strategy)
 
     print(f"\n{'=' * 50}")
     print(f"  A股量化回测系统")

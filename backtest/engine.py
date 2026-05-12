@@ -118,6 +118,8 @@ def run_backtest(strategy_cls, symbol, start_date, end_date,
     # 基准净值曲线取整
     bh_curve = [round(float(c) / bh_start * initial_cash, 2) for c in df["close"]]
 
+    dates = [d.strftime("%Y-%m-%d") for d in df.index]
+
     outcome = {
         "initial_value": start_value,
         "final_value": final_value,
@@ -127,6 +129,7 @@ def run_backtest(strategy_cls, symbol, start_date, end_date,
         "trades": strat.analyzers.trades.get_analysis(),
         "annret": strat.analyzers.annret.get_analysis(),
         "net_values": net_vals,
+        "dates": dates,
         "trade_records": getattr(strat, "trade_log", []),
         "monthly_returns": strat.analyzers.monthly.get_analysis(),
         "buy_hold_return": buy_hold_return,

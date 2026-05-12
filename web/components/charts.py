@@ -1,5 +1,5 @@
 """
-交互式图表 — 资金曲线、回撤、月度热力图、年度收益、K线图
+交互式图表 — 资金曲线、回撤、月度热力图、年度收益、K线图、优化热力图
 """
 import plotly.graph_objects as go
 import pandas as pd
@@ -10,20 +10,33 @@ COLORS = {
     "success": "#10b981",
     "danger": "#ef4444",
     "grid": "#e5e7eb",
+    "benchmark": "#94a3b8",
 }
-# 统一图表边距，保证标题和图例不粘连
 MARGIN = dict(l=60, r=30, t=60, b=40)
 TITLE_FONT = dict(size=16, color="#1e293b")
 
 
-def plot_equity_curve(net_values, initial_value, buy_hold_curve=None, trades=None):
+def _to_dt(dates):
+    """将日期字符串列表转为 datetime，失败则返回序号"""
+    if not dates:
+        return list(range(len(dates))) if dates else []
+    try:
+        return pd.to_datetime(dates)
+    except Exception:
+        return list(range(len(dates)))
+
+
+def plot_equity_curve(net_values, initial_value, buy_hold_curve=None, trades=None,
+                      dates=None, benchmark_curve=None, benchmark_label="基准"):
     fig = go.Figure()
-    x = list(range(len(net_values)))
+
+    x = _to_dt(dates) if dates else list(range(len(net_values)))
+    is_date_x = dates is not None
 
     fig.add_trace(go.Scatter(
         x=x, y=net_values, mode="lines", name="策略权益",
         line=dict(color=COLORS["primary"], width=2.5),
-        hovertemplate="策略权益: %{y:,.0f}<extra></extra>",
+        hovertemplate="%{x}" + ("<br>" if is_date_x else " ") + "策略: %{y:,.0f}<extra></extra>",
     ))
     fig.add_hline(y=initial_value, line_dash="dash", line_color="#94a3b8",
                   annotation_text="初始资金", annotation_position="right", opacity=0.6)
@@ -32,36 +45,55 @@ def plot_equity_curve(net_values, initial_value, buy_hold_curve=None, trades=Non
         fig.add_trace(go.Scatter(
             x=x, y=buy_hold_curve, mode="lines", name="买入持有",
             line=dict(color="#94a3b8", width=1.5, dash="dot"), opacity=0.7,
-            hovertemplate="买入持有: %{y:,.0f}<extra></extra>",
+            hovertemplate="%{x}" + ("<br>" if is_date_x else " ") + "持有: %{y:,.0f}<extra></extra>",
+        ))
+
+    if benchmark_curve and len(benchmark_curve) == len(net_values):
+        fig.add_trace(go.Scatter(
+            x=x, y=benchmark_curve, mode="lines", name=benchmark_label,
+            line=dict(color=COLORS["benchmark"], width=1.8, dash="dashdot"), opacity=0.65,
+            hovertemplate="%{x}" + ("<br>" if is_date_x else " ") + f"{benchmark_label}: " + "%{y:,.0f}<extra></extra>",
         ))
 
     if trades:
         for t in trades:
             try:
-                bi, bp = t.get("buy_bar"), t.get("buy_price", 0)
-                si, sp = t.get("sell_bar"), t.get("sell_price", 0)
-                if bi is not None:
+                bp = t.get("buy_price", 0)
+                sp = t.get("sell_price", 0)
+                bd = t.get("buy_date", "")
+                sd = t.get("sell_date", "")
+                bx = pd.to_datetime(bd) if is_date_x and bd else t.get("buy_bar")
+                sx = pd.to_datetime(sd) if is_date_x and sd else t.get("sell_bar")
+
+                if bp and bx is not None:
                     fig.add_trace(go.Scatter(
-                        x=[bi], y=[bp], mode="markers",
+                        x=[bx], y=[bp], mode="markers",
                         marker=dict(color=COLORS["success"], size=10, symbol="triangle-up",
                                    line=dict(color="white", width=1)),
                         showlegend=False,
-                        text=[f"买入 {t.get('buy_date','')} @ {bp:.2f}"], hoverinfo="text",
+                        text=[f"买入 {bd} @ {bp:.2f}"], hoverinfo="text",
                     ))
-                if si is not None:
+                if sp and sx is not None:
                     fig.add_trace(go.Scatter(
-                        x=[si], y=[sp], mode="markers",
+                        x=[sx], y=[sp], mode="markers",
                         marker=dict(color=COLORS["danger"], size=10, symbol="triangle-down",
                                    line=dict(color="white", width=1)),
                         showlegend=False,
-                        text=[f"卖出 {t.get('sell_date','')} @ {sp:.2f}"], hoverinfo="text",
+                        text=[f"卖出 {sd} @ {sp:.2f}"], hoverinfo="text",
                     ))
             except Exception:
                 pass
 
+    xaxis_config = dict(showgrid=True, gridcolor=COLORS["grid"], zeroline=False)
+    if is_date_x:
+        xaxis_config["title"] = ""
+        xaxis_config["type"] = "date"
+    else:
+        xaxis_config["title"] = "交易日"
+
     fig.update_layout(
         title=dict(text="资金曲线", font=TITLE_FONT),
-        xaxis=dict(title="交易日", showgrid=True, gridcolor=COLORS["grid"], zeroline=False),
+        xaxis=xaxis_config,
         yaxis=dict(title="账户价值（元）", showgrid=True, gridcolor=COLORS["grid"],
                    tickformat=",.0f", zeroline=False),
         hovermode="x unified",
@@ -73,7 +105,7 @@ def plot_equity_curve(net_values, initial_value, buy_hold_curve=None, trades=Non
     return fig
 
 
-def plot_drawdown(net_values):
+def plot_drawdown(net_values, dates=None):
     if not net_values or len(net_values) < 2:
         return go.Figure()
 
@@ -83,27 +115,36 @@ def plot_drawdown(net_values):
         peak = max(peak, v)
         drawdowns.append((v - peak) / peak * 100)
 
+    x = _to_dt(dates) if dates else list(range(len(drawdowns)))
+    is_date_x = dates is not None
+
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=list(range(len(drawdowns))), y=drawdowns, mode="lines",
+        x=x, y=drawdowns, mode="lines",
         fill="tozeroy", fillcolor="rgba(239,68,68,0.1)",
         line=dict(color=COLORS["danger"], width=1.5),
         name="回撤",
-        hovertemplate="回撤: %{y:.2f}%<extra></extra>",
+        hovertemplate="%{x}" + ("<br>" if is_date_x else " ") + "回撤: %{y:.2f}%<extra></extra>",
     ))
 
     max_dd = min(drawdowns)
     max_dd_idx = drawdowns.index(max_dd)
     fig.add_trace(go.Scatter(
-        x=[max_dd_idx], y=[max_dd], mode="markers+text",
+        x=[x[max_dd_idx]], y=[max_dd], mode="markers+text",
         marker=dict(color=COLORS["danger"], size=8),
         text=[f"最大 {max_dd:.1f}%"], textposition="bottom center",
         name="最大回撤", showlegend=False,
     ))
 
+    xaxis_config = dict(showgrid=True, gridcolor=COLORS["grid"], zeroline=False)
+    if is_date_x:
+        xaxis_config["type"] = "date"
+    else:
+        xaxis_config["title"] = "交易日"
+
     fig.update_layout(
         title=dict(text="回撤分析", font=TITLE_FONT),
-        xaxis=dict(title="交易日", showgrid=True, gridcolor=COLORS["grid"], zeroline=False),
+        xaxis=xaxis_config,
         yaxis=dict(title="回撤（%）", showgrid=True, gridcolor=COLORS["grid"], zeroline=False),
         plot_bgcolor="white", paper_bgcolor="white",
         margin=MARGIN,

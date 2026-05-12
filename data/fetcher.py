@@ -108,3 +108,37 @@ def fetch_stock_list():
 
     df.to_csv(cache_file, index=False)
     return df
+
+
+def fetch_index_hist(symbol="000300", start_date="20240101", end_date="20260512"):
+    """
+    获取指数历史日线数据（用于基准对比）。
+    默认沪深300（000300），也可传入 000001（上证指数）、399001（深证成指）等。
+    返回与 fetch_stock_hist 相同格式的 DataFrame。
+    """
+    akshare_symbol = f"sh{symbol}" if symbol.startswith("0") else f"sz{symbol}"
+    cache_file = _cache_path(f"index_{symbol}_{start_date}_{end_date}.csv")
+    if os.path.exists(cache_file):
+        df = pd.read_csv(cache_file, index_col=0, parse_dates=True, date_format="%Y-%m-%d")
+        if not df.empty:
+            return df
+
+    for attempt in range(AKSHARE_RETRIES):
+        try:
+            df = ak.stock_zh_index_daily(symbol=akshare_symbol)
+            if df is not None and not df.empty:
+                break
+        except Exception:
+            if attempt < AKSHARE_RETRIES - 1:
+                time.sleep(AKSHARE_RETRY_DELAY * (attempt + 1))
+            else:
+                raise RuntimeError(f"获取指数 {symbol} 数据失败")
+
+    df = df.rename(columns={"date": "date"} if "date" in df.columns else {})
+    if "date" not in df.columns:
+        df = df.reset_index()
+    df["date"] = pd.to_datetime(df["date"])
+    df = df[(df["date"] >= start_date) & (df["date"] <= end_date)]
+    df = df.sort_values("date")
+    df.to_csv(cache_file)
+    return df

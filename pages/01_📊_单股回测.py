@@ -1,9 +1,11 @@
 """
-单股回测
+单股回测 — 策略回测、交互式图表、CSV导出、基准对比
 """
 import streamlit as st
 import traceback
 import pandas as pd
+from datetime import date
+from io import StringIO
 
 from web.components.styles import inject_styles
 from web.components.sidebar import render_sidebar
@@ -11,35 +13,39 @@ from web.components.charts import (
     plot_equity_curve, plot_drawdown, plot_monthly_heatmap,
     plot_annual_returns, plot_kline,
 )
+from web.strategy_config import STRATEGY_CLASSES, STRATEGY_CONFIG
 from backtest.engine import run_backtest
-from strategies.ma_cross import MACrossStrategy
-from strategies.momentum import MomentumStrategy
-from strategies.mean_reversion import MeanReversionStrategy
-from strategies.turtle import TurtleStrategy
-
-STRATEGIES = {
-    "ma_cross": MACrossStrategy,
-    "momentum": MomentumStrategy,
-    "mean_rev": MeanReversionStrategy,
-    "turtle": TurtleStrategy,
-}
+from data.fetcher import fetch_index_hist
+from config import INITIAL_CASH
 
 
-def _build_kwargs(params):
-    stype = params["strategy"]
-    if stype == "ma_cross":
-        return {"fast": params.get("fast", 5), "slow": params.get("slow", 20)}
-    elif stype == "momentum":
-        return {"lookback": params.get("lookback", 20), "ma_period": params.get("ma_period", 60), "trail_pct": params.get("trail_pct", 0.06)}
-    elif stype == "mean_rev":
-        return {"bb_period": params.get("bb_period", 20), "bb_dev": params.get("bb_dev", 2.0), "rsi_period": params.get("rsi_period", 14)}
-    elif stype == "turtle":
-        return {"entry_period": params.get("entry_period", 20), "exit_period": params.get("exit_period", 10), "atr_stop": params.get("atr_stop", 2.0)}
-    return {}
+def _build_kwargs(params, meta):
+    """从扁平参数字典中提取策略专属参数"""
+    return {k: params[k] for k in meta["params"] if k in params}
+
+
+def _make_trade_csv(records):
+    """将交易记录转为CSV字符串"""
+    if not records:
+        return ""
+    df = pd.DataFrame(records)
+    cols = ["buy_date", "buy_price", "sell_date", "sell_price", "size", "pnl", "net_pnl"]
+    df = df[[c for c in cols if c in df.columns]]
+    df.columns = ["买入日期", "买入价", "卖出日期", "卖出价", "数量(股)", "毛利", "净利"]
+    return df.to_csv(index=False)
+
+
+def _make_equity_csv(dates, net_values, bh_curve=None):
+    """将净值曲线转为CSV字符串"""
+    data = {"日期": dates, "策略权益": net_values}
+    if bh_curve and len(bh_curve) == len(dates):
+        data["买入持有"] = bh_curve
+    return pd.DataFrame(data).to_csv(index=False)
 
 
 inject_styles()
 params, run_clicked = render_sidebar()
+meta = STRATEGY_CONFIG[params["strategy"]]
 
 st.title("单股回测")
 
@@ -47,12 +53,34 @@ if run_clicked:
     with st.spinner(f"正在获取 {params['symbol']} 数据并运行回测..."):
         try:
             result = run_backtest(
-                STRATEGIES[params["strategy"]], params["symbol"],
+                STRATEGY_CLASSES[params["strategy"]], params["symbol"],
                 params["start_date"], params["end_date"],
                 cash=params["initial_cash"],
-                **_build_kwargs(params),
+                **_build_kwargs(params, meta),
             )
+
+            # 获取沪深300基准
+            try:
+                idx_df = fetch_index_hist(
+                    "000300", params["start_date"], params["end_date"]
+                )
+                if not idx_df.empty and "close" in idx_df.columns:
+                    idx_start = float(idx_df["close"].iloc[0])
+                    idx_curve = [
+                        round(float(c) / idx_start * params["initial_cash"], 2)
+                        for c in idx_df["close"]
+                    ]
+                    if len(idx_curve) != len(result["net_values"]):
+                        idx_curve = None
+                else:
+                    idx_curve = None
+            except Exception:
+                idx_curve = None
+
+            result["benchmark_curve"] = idx_curve
+            result["benchmark_label"] = "沪深300"
             st.session_state["result"] = result
+
         except Exception as e:
             st.error(f"回测失败: {e}")
             with st.expander("详细错误信息"):
@@ -75,7 +103,7 @@ total_trades = trades.get("total", {}).get("total", 0)
 won = trades.get("won", {}).get("total", 0)
 win_rate = won / total_trades * 100 if total_trades > 0 else 0
 
-# 4列指标卡片——够宽不会截断
+# 指标卡片
 c1, c2 = st.columns(2)
 c3, c4 = st.columns(2)
 c5, c6 = st.columns(2)
@@ -90,33 +118,71 @@ c7.metric("初始资金", f"{r['initial_value']:,.0f} 元")
 c8.metric("最终资金", f"{r['final_value']:,.0f} 元")
 
 st.markdown("<br>", unsafe_allow_html=True)
+
+# --- 资金曲线 ---
 st.subheader("资金曲线")
-fig = plot_equity_curve(r["net_values"], r["initial_value"], r.get("buy_hold_curve"), r.get("trade_records", []))
+fig = plot_equity_curve(
+    r["net_values"], r["initial_value"],
+    buy_hold_curve=r.get("buy_hold_curve"),
+    trades=r.get("trade_records", []),
+    dates=r.get("dates"),
+    benchmark_curve=r.get("benchmark_curve"),
+    benchmark_label=r.get("benchmark_label", "沪深300"),
+)
 st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
+# --- 导出按钮 ---
+col_dl1, col_dl2 = st.columns(2)
+with col_dl1:
+    equity_csv = _make_equity_csv(
+        r.get("dates", []), r["net_values"], r.get("buy_hold_curve")
+    )
+    if equity_csv:
+        st.download_button(
+            "📥 导出净值曲线 CSV", equity_csv,
+            file_name=f"equity_{params['symbol']}_{params['start_date']}_{params['end_date']}.csv",
+            mime="text/csv",
+        )
+with col_dl2:
+    trade_csv = _make_trade_csv(r.get("trade_records", []))
+    if trade_csv:
+        st.download_button(
+            "📥 导出交易明细 CSV", trade_csv,
+            file_name=f"trades_{params['symbol']}_{params['start_date']}_{params['end_date']}.csv",
+            mime="text/csv",
+        )
+
 st.markdown("<br>", unsafe_allow_html=True)
+
+# --- 回撤分析 ---
 st.subheader("回撤分析")
-fig = plot_drawdown(r["net_values"])
+fig = plot_drawdown(r["net_values"], dates=r.get("dates"))
 st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 st.markdown("<br>", unsafe_allow_html=True)
+
+# --- 月度热力图 ---
 st.subheader("月度收益热力图")
 fig = plot_monthly_heatmap(r.get("monthly_returns", {}))
 st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 st.markdown("<br>", unsafe_allow_html=True)
+
+# --- 年度收益率 ---
 st.subheader("年度收益率")
 fig = plot_annual_returns(r.get("annret", {}))
 st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 st.markdown("<br>", unsafe_allow_html=True)
+
+# --- K线图 ---
 st.subheader("K线图")
 df = r.get("clean_df")
 if df is not None and not df.empty:
     fig = plot_kline(df)
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-# 交易明细
+# --- 交易明细 ---
 st.markdown("---")
 st.subheader("交易明细")
 trade_records = r.get("trade_records", [])
