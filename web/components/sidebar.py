@@ -153,20 +153,14 @@ def render_sidebar():
     # === Step 3: 参数配置 ===
     st.sidebar.markdown("### ③ 调整参数")
 
-    # 预设按钮
+    # 预设方案下拉选择
     presets = meta["presets"]
     preset_names = list(presets.keys())
-    preset_cols = st.sidebar.columns(len(preset_names))
-
-    selected_preset = st.session_state.get(f"preset_{params['strategy']}", "📐 默认")
-    for i, name in enumerate(preset_names):
-        with preset_cols[i]:
-            btn_type = "primary" if name == selected_preset else "secondary"
-            if st.button(name, key=f"p_{params['strategy']}_{i}",
-                        use_container_width=True, type=btn_type):
-                st.session_state[f"preset_{params['strategy']}"] = name
-                st.rerun()
-
+    selected_preset = st.sidebar.selectbox(
+        "预设方案", preset_names,
+        index=preset_names.index(st.session_state.get(f"preset_{params['strategy']}", "📐 默认"))
+    )
+    st.session_state[f"preset_{params['strategy']}"] = selected_preset
     preset_vals = presets.get(selected_preset, presets.get("📐 默认", {}))
 
     # 参数滑块
