@@ -13,7 +13,10 @@ from web.strategy_config import (
     get_strategy_default_kwargs, convert_params_for_backtest,
 )
 from backtest.engine import run_backtest
-from data.fetcher import fetch_index_hist
+try:
+    from data.fetcher import fetch_index_hist
+except ImportError:
+    fetch_index_hist = None
 
 STRATEGY_COLORS = {
     "ma_cross": "#1a73e8",

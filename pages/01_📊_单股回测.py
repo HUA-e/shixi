@@ -15,7 +15,10 @@ from web.components.charts import (
 )
 from web.strategy_config import STRATEGY_CLASSES, STRATEGY_CONFIG
 from backtest.engine import run_backtest
-from data.fetcher import fetch_index_hist
+try:
+    from data.fetcher import fetch_index_hist
+except ImportError:
+    fetch_index_hist = None
 from config import INITIAL_CASH
 
 
